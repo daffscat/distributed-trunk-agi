@@ -17,11 +17,13 @@
 # indiquera le classement des trunks (suivant leur utilisation), indiquera si le numéro a déjà été enregistré dans un trunk
 # et sinon sur quel trunk il va être enregistré.
 #
-# > rajouter dans [from-internal-custom] 
+# > Sous FreePBX, rajouter dans [from-internal-custom] 
 # include => ovh-versfixes-trunks 
 # ou mieux declarer custom trunk as Local/$OUTNUM$@ovh-versfixes-trunks
 # on remplacera le pattern par _X. 
+# > Sous XIVO, ???
 
+# > Sous FreePBX, création du contexte
 # [ovh-versfixes-trunks]
 # ; distributions des trunks ovh pour les fixes
 # ; en tenant comptes de la limite de 99 numeros par trunks
@@ -32,6 +34,7 @@
 # exten => _0[1234579]XXXXXXXX,n,Macro(dialout-trunk,${OVH2},${EXTEN},,)
 # exten => _0[1234579]XXXXXXXX,n,Macro(dialout-trunk,${OVH3},${EXTEN},,)
 # exten => _0[1234579]XXXXXXXX,n,Macro(outisbusy,)
+# > Sous XIVO, ???
 #
 #
 # Creation de la table ovhcalls pour XIVO dans la base asterisk
