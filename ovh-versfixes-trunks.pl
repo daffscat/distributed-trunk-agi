@@ -5,10 +5,17 @@
 # > repartition des appels sur tous les trunks
 # > appel d'un numero toujours sur le meme trunk
 
-# à utiliser avec freebpx
-# copyright 2009 infimo sarl 
+# 
+# copyright original 2009 infimo sarl 
+# mise à jour pour fonctionner avec postgreSQL et XIVO
 #
 #  Usage:
+#
+# Pour tester le script en ligne de commande:
+# ./ovh-versfixes-trunks.pl test 0033500000000
+#
+# indiquera le classement des trunks (suivant leur utilisation), indiquera si le numéro a déjà été enregistré dans un trunk
+# et sinon sur quel trunk il va être enregistré.
 #
 # > rajouter dans [from-internal-custom] 
 # include => ovh-versfixes-trunks 
@@ -27,17 +34,53 @@
 # exten => _0[1234579]XXXXXXXX,n,Macro(outisbusy,)
 #
 #
-#Creation de la table dans asteriskcdrdb
+# Creation de la table ovhcalls pour XIVO dans la base asterisk
+# (XIVO utilise postgreSQL par défaut. Nous allons utiliser
+# ce SGBD pour gérer notre table)
 #
-#CREATE TABLE IF NOT EXISTS `ovhcalls` (
-#  `number` bigint(20) unsigned NOT NULL,
-#  `trunk` int(10) unsigned NOT NULL,
-#  `lastchanged` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
-#  PRIMARY KEY  (`number`,`trunk`),
-#  UNIQUE KEY `numero` (`number`)
-#) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+# Se connecter à la base asterisk en ligne de commande
+#	sudo -u postgres psql asterisk
 #
-
+# Créer la base ovhcalls
+# 	CREATE TABLE ovhcalls (
+#	number VARCHAR (40) NOT NULL,
+#	trunk BIGINT NOT NULL,
+#	lastchanged timestamp default NULL,
+#	PRIMARY KEY (number,trunk), UNIQUE (number));
+#
+# Quelques explications: 
+# Pourquoi choisir d'utiliser VARCHAR (40) pour stocker le numéro de téléphone ? alors qu'un BIGINT aurait fait l'affaire.
+# La première raison est pour conserver le ou les zéros au début du numéro (corrigez moi si je me trompe, mais dans le cas de typage en INT
+# un numéro comme 0463 deviendra 463.
+# Ensuite, pour conserver une approche valide, http://www.faqs.org/rfcs/rfc2806.html, en autorisant le "+" en début de numéro international par exemple, 
+# ou les espaces, caractères entres les chiffres: eg: +358-555-1234567
+# Enfin, pourquoi une taille de 40 alors que 15 caractères auraient pu suffire?  (voir http://en.wikipedia.org/wiki/Telephone_number)
+# En l'absence de besoin d'optimisation à ce jour, je préfère prendre large. Libre à vous d'adapter cette réservation.
+#
+# Pourquoi choisir lastchanged comme NULL ?
+# Au tout début de mes tests, j'avais utilisé une définition "NOT NULL"
+# Créé une fonction qui remplace la macro CURRENT_TIMESTAMP avec mySQL:
+#	CREATE OR REPLACE FUNCTION update_changetimestamp_column()
+#	RETURNS TRIGGER AS $$
+# 	BEGIN
+# 	    NEW.lastchanged = now(); 
+#	    RETURN NEW;
+#	END;
+#	$$ language 'plpgsql';
+#
+# Rajouté un Trigger pour déclencher la fonction à chaque mise à jour
+# CREATE TRIGGER update_ab_changetimestamp BEFORE UPDATE
+#   ON ovhcalls FOR EACH ROW EXECUTE PROCEDURE 
+#    update_changetimestamp_column();
+#
+# Mais malgrés tout, la mise à jour de la variable ne se faisait pas, ou pas sur toutes les entrées ...
+# J'ai donc directement introduit la mise à jour du timestamp directement au script
+#
+# Pour fonctionner avec XIVO, il faudra installer Perl DBI module, le PostgreSQL DBD driver, Asterisk::AGI et Data::Dump
+# au choix suivant les distributions linux
+# perl -MCPAN -e 'install DBD::Pg" ou apt-get install libdbd-pg-perl sur Debian/Ubuntu/relative
+# perl -MCPAN -e "install Asterisk::AGI"
+# perl -MCPAN -e "install Data::Dump" 
 
 use strict;
 #use warnings;
@@ -58,10 +101,9 @@ my $DEBUG=1;
 use DBI;
 
 my $db_host="localhost";
-# TODO: read value in cdr_mysql.conf
-my $db_base="asteriskcdrdb";
-my $db_login="asteriskuser";
-my $db_password="infimo";
+my $db_base="asterisk";
+my $db_login="postgres";
+my $db_password="postgres_password";
 my $starttime = (times)[0];
 
 ### FUNCS
@@ -72,18 +114,17 @@ sub get_ovh_trunks ($)
 	my $requete;
 	my $sth;
 	######################################################
-	# Connection à la base mysql
+	# Connection à la base postgreSQL
 	######################################################
-	my $dbh = DBI->connect("DBI:mysql:$db_base;$db_host","$db_login","$db_password") or	die "Echec connexion";
+	my $dbh = DBI->connect("DBI:Pg:dbname=$db_base;host=$db_host","$db_login","$db_password") or    die "Echec connexion";
 
 	######################################################
 	# effacement données mois precedent
 	######################################################
-	$requete = "DELETE from ovhcalls where lastchanged < concat(date_format(LAST_DAY(now()),'%Y-%m-'),'01')";
+	$requete = "DELETE from ovhcalls where lastchanged < date(concat(to_char(now(),'YYYY-Mon-'),'01'))";
 	$sth = $dbh->prepare($requete);
 	$sth->execute();
 	$sth->finish;
-
 
 	
 	######################################################
@@ -117,7 +158,7 @@ sub get_ovh_trunks ($)
 	######################################################
 	# recup du trunk ( ou des !! ) deja selectionné
 	###################################################### 
-	$requete = "SELECT trunk FROM ovhcalls WHERE number=" . $number;
+	$requete = "SELECT trunk FROM ovhcalls WHERE number= cast ($number as varchar(40))";
 	print STDERR "requete:$requete\n";
 	$array_ref = $dbh->selectcol_arrayref($requete);
 	print STDERR "trunks for $number\n";
@@ -144,9 +185,14 @@ sub get_ovh_trunks ($)
 	#save assigned trunk
 	######################################################
 	$trunk=$besttrunks[0];
-	$requete = "REPLACE  ovhcalls SET number = $number,  trunk = $trunk";
+	# REPLACE n'existe pas avec PostgreSQL, on réalise un UPSERT en version légère
+        $requete = "UPDATE ovhcalls SET trunk = $trunk, lastchanged = localtimestamp(1) WHERE number = cast ($number as varchar(40))";
 	print STDERR "requete:$requete\n";
 	$sth = $dbh->prepare($requete);
+	$sth->execute();
+	$sth->finish;
+	# REPLACE
+	$requete = "INSERT INTO ovhcalls (number, trunk, lastchanged) SELECT $number, $trunk, localtimestamp(1) WHERE NOT EXISTS (SELECT 1 FROM ovhcalls WHERE number = cast ($number as varchar(40)))";
 	$sth->execute();
 	$sth->finish;
 	$dbh->disconnect;
