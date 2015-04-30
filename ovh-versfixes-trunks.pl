@@ -25,15 +25,15 @@
 
 # > Sous FreePBX, création du contexte
 # [ovh-versfixes-trunks]
-# ; distributions des trunks ovh pour les fixes
+# ; distributions des trunks ovh pour les téléphones fixes
 # ; en tenant comptes de la limite de 99 numeros par trunks
-# exten => _0[1234579]XXXXXXXX,1,AGI(ovh-versfixes-trunks.pl,${EXTEN})
-# exten => _0[1234579]XXXXXXXX,n,ResetCDR()
-# exten => _0[1234579]XXXXXXXX,n,Set(CDR(userfield)=${OUT_${OVH1}})
-# exten => _0[1234579]XXXXXXXX,n,Macro(dialout-trunk,${OVH1},${EXTEN},,)
-# exten => _0[1234579]XXXXXXXX,n,Macro(dialout-trunk,${OVH2},${EXTEN},,)
-# exten => _0[1234579]XXXXXXXX,n,Macro(dialout-trunk,${OVH3},${EXTEN},,)
-# exten => _0[1234579]XXXXXXXX,n,Macro(outisbusy,)
+# exten => _0[123459]XXXXXXXX,1,AGI(ovh-versfixes-trunks.pl,${EXTEN})
+# exten => _0[123459]XXXXXXXX,n,ResetCDR()
+# exten => _0[123459]XXXXXXXX,n,Set(CDR(userfield)=${OUT_${OVH1}})
+# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH1},${EXTEN},,)
+# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH2},${EXTEN},,)
+# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH3},${EXTEN},,)
+# exten => _0[123459]XXXXXXXX,n,Macro(outisbusy,)
 # > Sous XIVO, ???
 #
 #
