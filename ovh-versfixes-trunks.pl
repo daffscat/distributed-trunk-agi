@@ -134,7 +134,7 @@ sub get_ovh_trunks ($)
 	# par defaut recuperation dest trunks les moins utilisés dans l'ordre.
 	######################################################
 	my @besttrunks=();
-	$requete = "SELECT trunk, count(number) as mycount FROM ovhcalls group by trunk order by mycount ";
+	$requete = "SELECT trunk, count($number) as mycount FROM ovhcalls group by trunk order by mycount ";
 	my $array_ref = $dbh->selectcol_arrayref($requete);
 	print STDERR "best trunks\n";
 	dump($array_ref);
@@ -190,12 +190,13 @@ sub get_ovh_trunks ($)
 	$trunk=$besttrunks[0];
 	# REPLACE n'existe pas avec PostgreSQL, on réalise un UPSERT en version légère
         $requete = "UPDATE ovhcalls SET trunk = $trunk, lastchanged = localtimestamp(1) WHERE number = cast ($number as varchar(40))";
-	print STDERR "requete:$requete\n";
+	#print STDERR "requete:$requete\n";
 	$sth = $dbh->prepare($requete);
 	$sth->execute();
 	$sth->finish;
 	# REPLACE
 	$requete = "INSERT INTO ovhcalls (number, trunk, lastchanged) SELECT $number, $trunk, localtimestamp(1) WHERE NOT EXISTS (SELECT 1 FROM ovhcalls WHERE number = cast ($number as varchar(40)))";
+	$sth = $dbh->prepare($requete);
 	$sth->execute();
 	$sth->finish;
 	$dbh->disconnect;
