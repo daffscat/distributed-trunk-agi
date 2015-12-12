@@ -4,10 +4,12 @@
 # Script distribution des ovh trunks
 # > repartition des appels sur tous les trunks
 # > appel d'un numero toujours sur le meme trunk
-
 # 
 # copyright original 2009 infimo sarl 
-# mise à jour pour fonctionner avec postgreSQL et XIVO
+# Script original: https://github.com/fastm3/distributed-trunk-agi
+# par fastm3
+#
+# Mis à jour pour fonctionner avec postgreSQL et XIVO
 #
 #  Usage:
 #
@@ -17,27 +19,37 @@
 # indiquera le classement des trunks (suivant leur utilisation), indiquera si le numéro a déjà été enregistré dans un trunk
 # et sinon sur quel trunk il va être enregistré.
 #
-# > Sous FreePBX, rajouter dans [from-internal-custom] 
-# include => ovh-versfixes-trunks 
-# ou mieux declarer custom trunk as Local/$OUTNUM$@ovh-versfixes-trunks
-# on remplacera le pattern par _X. 
-# > Sous XIVO, ???
-
-# > Sous FreePBX, création du contexte
-# [ovh-versfixes-trunks]
+# > Sous XIVO, 
+# Prerequisite:
+# Download and install the Perl DBI module and the PostgreSQL DBD driver by running the following commands:
+#
+# With software distributions based on Debian:
+# apt-get install libdbd-pg-perl
+# apt-get install libasterisk-agi-perl
+# apt-get install libdata-dump-perl
+#
+# OR
+# at your Perl prompt:
+# perl -MCPAN -e "install DBD::Pg"
+# perl -MCPAN -e "install Asterisk::AGI"
+# perl -MCPAN -e "install Data::Dump" 
+#
+# > Sous XIVO, création du contexte [versfixes-smart-trunks] 
+# Dans cet exemple on utilise 3 Trunks dont les noms seront 
+# retournés par les variables ${OVH1}, ${OVH2} et ${OVH3}
+#
+# [versfixes-smart-trunks]
 # ; distributions des trunks ovh pour les téléphones fixes
 # ; en tenant comptes de la limite de 99 numeros par trunks
-# exten => _0[123459]XXXXXXXX,1,AGI(ovh-versfixes-trunks.pl,${EXTEN})
-# exten => _0[123459]XXXXXXXX,n,ResetCDR()
-# exten => _0[123459]XXXXXXXX,n,Set(CDR(userfield)=${OUT_${OVH1}})
-# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH1},${EXTEN},,)
-# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH2},${EXTEN},,)
-# exten => _0[123459]XXXXXXXX,n,Macro(dialout-trunk,${OVH3},${EXTEN},,)
-# exten => _0[123459]XXXXXXXX,n,Macro(outisbusy,)
-# > Sous XIVO, ???
+# exten => smart,1,AGI(ovh-versfixes-trunks.pl,${EXTEN}) 
+# same => n, Dial(SIP/${OVH1}/${EXTEN})
+# same => n, Dial(SIP/${OVH2}/${EXTEN})
+# same => n, Dial(SIP/${OVH3}/${EXTEN})
+# same => n, Playback(congestion-call)
+# same => n, Hangup()
 #
 #
-# Creation de la table ovhcalls pour XIVO dans la base asterisk
+# > Creation de la table ovhcalls pour XIVO dans la base asterisk
 # (XIVO utilise postgreSQL par défaut. Nous allons utiliser
 # ce SGBD pour gérer notre table)
 #
@@ -79,11 +91,26 @@
 # Mais malgrés tout, la mise à jour de la variable ne se faisait pas, ou pas sur toutes les entrées ...
 # J'ai donc directement introduit la mise à jour du timestamp directement au script
 #
-# Pour fonctionner avec XIVO, il faudra installer Perl DBI module, le PostgreSQL DBD driver, Asterisk::AGI et Data::Dump
-# au choix suivant les distributions linux
-# perl -MCPAN -e 'install DBD::Pg" ou apt-get install libdbd-pg-perl sur Debian/Ubuntu/relative
-# perl -MCPAN -e "install Asterisk::AGI"
-# perl -MCPAN -e "install Data::Dump" 
+# > Créer un Custom Trunk sous Xivo
+# A partir de l'interface WEB:
+#
+# Name: mon-smart-trunk
+# interface: local
+# interface suffix: @versfixes-smart-trunks  /* bien faire attention à respecter la case du nom du contexte créé précédenment */
+# context: to-extern  
+#
+# > Router les appels vers notre Custom Trunk
+# A partir de l'interface WEB
+#
+# Dans Call Management -> OutGoing Call
+# -> General: Name, Context, ..., Ce que vous voulez 
+# + Ajouter le Custom Trunk créé précédenment (mon-smart-trunk dans cet exemple) dans la liste des trunks utilisés
+#
+# -> Exten
+# Dans mon cas je filtre sur tous les fixes en France (Hors numéros spéciaux)
+# je rajoute donc 0[123459]. à Extern
+#
+# > That's it really ! Try it and let me know.
 
 use strict;
 #use warnings;
@@ -134,7 +161,7 @@ sub get_ovh_trunks ($)
 	# par defaut recuperation dest trunks les moins utilisés dans l'ordre.
 	######################################################
 	my @besttrunks=();
-	$requete = "SELECT trunk, count($number) as mycount FROM ovhcalls group by trunk order by mycount ";
+	$requete = "SELECT trunk, count(number) as mycount FROM ovhcalls group by trunk order by mycount ";
 	my $array_ref = $dbh->selectcol_arrayref($requete);
 	print STDERR "best trunks\n";
 	dump($array_ref);
