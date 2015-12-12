@@ -285,7 +285,7 @@ else
 		die "$myself: Erreur critique, pas de trunks" if $DEBUG;
 	}
 	
-	# on sette ovh1,ovh2....
+	# on prépare les variables à fournir au DialPlan; ovh1,ovh2....
 
 	my $count=0;
 	foreach my $trunkovh (@ovhtrunks) 
